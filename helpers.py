@@ -1,9 +1,9 @@
-def render_agent(env, agent):
+def render_policy(policy, env):
     total_reward = 0
     observation = env.reset()
     while True:
         env.render()
-        action = agent.choose_action(observation)
+        action = policy.choose_action(observation)
         observation, reward, done, info = env.step(action)
         total_reward += reward
         if done:
@@ -12,12 +12,12 @@ def render_agent(env, agent):
     return total_reward
 
 
-def get_policy_mean_reward(agent, env, n_iter=10):
+def get_policy_mean_reward(policy, env, n_iter=10):
     cumulative_reward = 0
     for i_episode in range(n_iter):
         observation = env.reset()
         while True:
-            action = agent.choose_action(observation)
+            action = policy.choose_action(observation)
             observation, reward, done, info = env.step(action)
             cumulative_reward += reward
             if done:
