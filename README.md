@@ -8,7 +8,7 @@ The policy gradients algorithm is used to train a simple policy to solve the Ope
 
 Currently (as of March 18, 2018), this implementation of policy gradients is able to solve the CartPole-v1 and Acrobot-v1 environments fairly quickly (<100 iterations) and the MountainCarContinuous-v0 and Pendulum-v0 more slowly (500 - 1500 iterations). It is unable to solve the MountainCar-v0 environment due to the sparsity of the reward.
 
-Usage: run `python control <environment_name>`. While this code is intended for the classic control environments, it can be run with any environment that has an action space of type `Discrete` or `Box` (though it would probably not do very well on environments that are significantly more complex than the classic control ones)
+Usage: run `python control.py <environment_name>`. While this code is intended for the classic control environments, it can be run with any environment that has an action space of type `Discrete` or `Box` (though it would probably not do very well on environments that are significantly more complex than the classic control ones)
 
 [1]: http://rll.berkeley.edu/deeprlcourse/f17docs/lecture_4_policy_gradient.pdf
 [2]: http://rll.berkeley.edu/deeprlcourse/
