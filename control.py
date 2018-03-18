@@ -36,22 +36,19 @@ class Continuous1LayerGaussianPolicy(object):
 
     def __init__(self,
                  observation_dim,
-                 cov_matrix,
+                 action_dim,
                  num_hidden_units):
-
-        assert (len(cov_matrix.shape) == 2 and
-                np.allclose(cov_matrix, cov_matrix.T)), (
-            'Covariance matrix must be 2-dimensional and symmetric')
 
         self.type = 'continuous'
         self.observation_dim = observation_dim
-        self.action_dim = cov_matrix.shape[0]
-        self.cov_matrix = cov_matrix
+        self.action_dim = action_dim
+
+        self.log_stdevs = tfe.Variable(np.zeros(self.action_dim))
         self._dense1 = tf.layers.Dense(
             num_hidden_units, activation=tf.nn.relu)
         self._dense2 = tf.layers.Dense(self.action_dim)
 
-    def get_action_values(self, observations):
+    def get_action_mean_values(self, observations):
         return self._dense2(self._dense1(observations))
 
     def choose_action(self, observation):
@@ -61,8 +58,11 @@ class Continuous1LayerGaussianPolicy(object):
             .format(self.observation_dim))
 
         observation_tensor = tf.reshape(observation, [1, self.observation_dim])
-        action_values = self.get_action_values(observation_tensor)[0].numpy()
-        return np.random.multivariate_normal(action_values, self.cov_matrix)
+        cov_matrix = np.diag(np.exp(self.log_stdevs.numpy()) ** 2)
+        action_mean_values = self.get_action_mean_values(
+            observation_tensor)[0].numpy()
+
+        return np.random.multivariate_normal(action_mean_values, cov_matrix)
 
 
 class PolicyGradientsOptimizer(object):
@@ -81,13 +81,17 @@ class PolicyGradientsOptimizer(object):
 
     def loss_continuous(self, policy, observations, actions, q_values):
         observations = tf.convert_to_tensor(observations)
-        action_values = policy.get_action_values(observations)
-        weighted_mse_loss = tf.losses.mean_squared_error(
-            labels=actions,
-            predictions=action_values,
-            weights=q_values.reshape((q_values.shape[0], 1)))
+        action_mean_values = policy.get_action_mean_values(observations)
+        squared_diff = tf.square((actions - action_mean_values))
+        negative_likelihoods = (
+            0.5 * (squared_diff * tf.exp(-2 * policy.log_stdevs)) +
+            policy.log_stdevs)
 
-        return weighted_mse_loss
+        weighted_negative_likelihoods = tf.multiply(
+            negative_likelihoods,
+            np.reshape(q_values, (q_values.shape[0], 1)))
+
+        return tf.reduce_mean(weighted_negative_likelihoods)
 
     def policy_rollout(self, policy, env, n_samples, time_horizon):
         observations = []
@@ -126,17 +130,21 @@ class PolicyGradientsOptimizer(object):
                         verbose=1):
 
         if policy.type == 'discrete':
-            grads = tfe.implicit_gradients(self.loss_discrete)
+            loss = self.loss_discrete
         elif policy.type == 'continuous':
-            grads = tfe.implicit_gradients(self.loss_continuous)
+            loss = self.loss_continuous
+
+        grads = tfe.implicit_gradients(loss)
 
         for i in range(n_iter):
             observations, actions, q_values, mean_reward = self.policy_rollout(
                 policy, env, n_samples_per_rollout, time_horizon)
 
-            if verbose >= 1 and (i+1) % 10 == 0:
-                print('Iteration {0}. Average reward: {1}'
-                      .format(i+1, mean_reward))
+            if verbose >= 1 and (i+1) % 1 == 0:
+                print('Iteration {0}. Loss: {1}. Average reward: {2}.'
+                      .format(i+1,
+                              loss(policy, observations, actions, q_values),
+                              mean_reward))
 
             if verbose >= 2 and (i+1) % 10 == 0:
                 render_policy(policy, env)
@@ -162,21 +170,21 @@ if __name__ == '__main__':
     elif isinstance(env.action_space, gym.spaces.Box):
         policy = Continuous1LayerGaussianPolicy(
             observation_dim=np.prod(env.observation_space.shape),
-            cov_matrix=0.2 * np.eye(env.action_space.shape[0]),
+            action_dim=env.action_space.shape[0],
             num_hidden_units=16)
     else:
         raise TypeError('Policy classes can only handle action spaces of'
                         ' type Discrete or Box')
 
     policy_optimizer = PolicyGradientsOptimizer(
-        tf.train.AdamOptimizer(learning_rate=0.1))
+        tf.train.AdamOptimizer(learning_rate=0.01))
 
     n_iter = policy_optimizer.optimize_policy(
         policy,
         env,
         n_samples_per_rollout=20,
         time_horizon=1000,
-        n_iter=200,
+        n_iter=1000,
         verbose=2)
 
     print('\nElapsed time: {}'.format(time.time()-t))
